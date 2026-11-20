@@ -47,10 +47,12 @@ func TestLoadCachedRoundtrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, report.ContentHash)
 
-	cached := LoadCached(reportDir, "evil", report.ContentHash)
-	require.NotNil(t, cached, "identical content must hit the cache")
+	cached := LoadCached(reportDir, "evil", report.ContentHash, "", false)
+	require.NotNil(t, cached, "identical content and configuration must hit the cache")
 	assert.Equal(t, VerdictMalicious, cached.Verdict)
 
-	assert.Nil(t, LoadCached(reportDir, "evil", "different-hash"))
-	assert.Nil(t, LoadCached(reportDir, "missing", report.ContentHash))
+	assert.Nil(t, LoadCached(reportDir, "evil", "different-hash", "", false))
+	assert.Nil(t, LoadCached(reportDir, "evil", report.ContentHash, "some-model", true),
+		"a static-only report must not satisfy an agent-enabled configuration")
+	assert.Nil(t, LoadCached(reportDir, "missing", report.ContentHash, "", false))
 }

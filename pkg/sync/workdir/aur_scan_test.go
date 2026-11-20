@@ -22,6 +22,14 @@ const scanTestBenign = "pkgname=hello\npackage() {\n  make DESTDIR=\"$pkgdir\" i
 
 func newScanTestPreparer(t *testing.T, input string, strict bool) (*Preparer, string, *bytes.Buffer) {
 	t.Helper()
+	// These tests exercise the static layer only: ambient credentials must
+	// not enable the agent and cause real network calls.
+	for _, key := range []string{
+		"YAY_SCAN_PROVIDER", "YAY_SCAN_BASE_URL", "YAY_SCAN_API_KEY", "YAY_SCAN_MODEL",
+		"OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL",
+	} {
+		t.Setenv(key, "")
+	}
 	buildDir := t.TempDir()
 	cfg := settings.DefaultConfig("test")
 	cfg.BuildDir = buildDir

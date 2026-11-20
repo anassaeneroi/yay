@@ -75,9 +75,9 @@ func hashFile(h hash.Hash, root, path string) error {
 }
 
 // LoadCached returns a previous report for pkg when it is still valid: same
-// content, same scanner version, and a complete (error-free) scan. Otherwise
-// it returns nil and the package is rescanned.
-func LoadCached(reportDir, pkg, hash string) *Report {
+// content, same scanner version, same agent configuration, and a complete
+// (error-free) scan. Otherwise it returns nil and the package is rescanned.
+func LoadCached(reportDir, pkg, hash, model string, agentEnabled bool) *Report {
 	data, err := os.ReadFile(ReportPath(reportDir, pkg))
 	if err != nil {
 		return nil
@@ -87,7 +87,11 @@ func LoadCached(reportDir, pkg, hash string) *Report {
 		return nil
 	}
 	if report.ContentHash == "" || report.ContentHash != hash ||
-		report.ScannerVersion != ScannerVersion || report.Error != "" {
+		report.ScannerVersion != ScannerVersion ||
+		report.Error != "" || report.AgentRun != agentEnabled {
+		return nil
+	}
+	if agentEnabled && report.Model != model {
 		return nil
 	}
 	return &report

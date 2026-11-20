@@ -189,7 +189,7 @@ func usage(logger *text.Logger) {
 		{"--cleanmenu", gotext.Get("Give the option to clean build PKGBUILDS")},
 		{"--diffmenu", gotext.Get("Give the option to show diffs for build files")},
 		{"--editmenu", gotext.Get("Give the option to edit/view PKGBUILDS")},
-		{"--scan", gotext.Get("Scan AUR packages for malware before building (static checks)")},
+		{"--scan", gotext.Get("Scan AUR packages for malware before building")},
 		{"--noscan", gotext.Get("Skip malware scanning")},
 		{"--scanstrict", gotext.Get("Abort if a malware scan cannot complete")},
 		{"--askremovemake", gotext.Get("Ask to remove makedepends after install")},

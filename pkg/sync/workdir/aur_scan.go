@@ -3,6 +3,7 @@ package workdir
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/Jguer/yay/v13/pkg/scan"
@@ -12,15 +13,21 @@ import (
 	"github.com/leonelquinteros/gotext"
 )
 
-// ScanPackage audits one AUR pkgbase, reusing a cached report when the package
-// contents and scanner version are unchanged. The report is always printed;
-// callers decide what the verdict means for their operation.
+// ScanPackage audits one AUR pkgbase, reusing a cached report when neither the
+// package contents nor the scanner configuration changed. The report is always
+// printed; callers decide what the verdict means for their operation.
 func ScanPackage(ctx context.Context, cfg *settings.Configuration, logger *text.Logger,
 	base, dir string,
 ) (*scan.Report, error) {
+	llmCfg, cfgErr := scan.ResolveLLMConfig()
+	hasLLM := cfgErr == nil
+	if !hasLLM {
+		logger.Warnln(cfgErr)
+	}
+
 	reportDir := filepath.Join(cfg.BuildDir, "scan")
 	if hash, err := scan.ContentHash(dir); err == nil {
-		if cached := scan.LoadCached(reportDir, base, hash); cached != nil {
+		if cached := scan.LoadCached(reportDir, base, hash, llmCfg.Model, hasLLM); cached != nil {
 			cached.Cached = true
 			logger.OperationInfoln(gotext.Get("Scanning %s for malware (cached result)", base))
 			logger.Print(cached.Format())
@@ -30,10 +37,21 @@ func ScanPackage(ctx context.Context, cfg *settings.Configuration, logger *text.
 
 	logger.OperationInfoln(gotext.Get("Scanning %s for malware", base))
 
+	var agent *scan.Agent
+	if hasLLM {
+		agent = scan.NewAgent(scan.NewLLM(llmCfg), scan.NewTools(dir))
+	}
+	var debug *os.File
+	if cfg.Debug {
+		debug = os.Stderr
+	}
+
 	report, err := scan.New(scan.Options{
 		Package:   base,
 		Dir:       dir,
+		Agent:     agent,
 		ReportDir: reportDir,
+		Debug:     debug,
 	}).Run(ctx)
 
 	logger.Print(report.Format())

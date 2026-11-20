@@ -1,8 +1,12 @@
 // Package scan implements pre-build malware scanning of AUR packages.
 //
-// Deterministic heuristics run over a package's build directory: the
-// PKGBUILD, install scripts and the downloaded sources, which are unpacked
-// with bsdtar (never makepkg, which would execute package code).
+// Two layers run over a package's build directory:
+//   - deterministic heuristics over PKGBUILD, .install and source files;
+//   - a bounded, read-only LLM agent that inspects the same files through a
+//     fixed tool layer (no shell) and returns a structured verdict.
+//
+// Verdicts are merged worst-first. File contents are untrusted input: they are
+// shown to the model as data and never influence scan policy.
 package scan
 
 import (
@@ -17,13 +21,13 @@ const (
 	VerdictClean      Verdict = "clean"
 	VerdictSuspicious Verdict = "suspicious"
 	VerdictMalicious  Verdict = "malicious"
-	// VerdictUnknown means the scan could not complete. Policy decides
-	// whether that fails open (warn) or closed (--scanstrict).
+	// VerdictUnknown means the scan could not complete (no LLM configured,
+	// transport failure, budget exhausted). Policy decides fail-open/closed.
 	VerdictUnknown Verdict = "unknown"
 )
 
 // rank orders verdicts from least to most severe; Unknown is least severe so a
-// failed scan can never mask a concrete finding.
+// failed agent run can never mask a concrete static finding.
 func (v Verdict) rank() int {
 	switch v {
 	case VerdictUnknown:
@@ -67,7 +71,7 @@ func (s Severity) verdict() Verdict {
 
 // Finding is one concrete observation about a file.
 type Finding struct {
-	Source   string   `json:"source"` // "static"
+	Source   string   `json:"source"` // "static" or "agent"
 	Severity Severity `json:"severity"`
 	Rule     string   `json:"rule,omitempty"`
 	File     string   `json:"file,omitempty"`
@@ -81,19 +85,22 @@ type Report struct {
 	Package   string    `json:"package"`
 	Directory string    `json:"directory"`
 	Verdict   Verdict   `json:"verdict"`
+	Summary   string    `json:"summary,omitempty"`
 	Findings  []Finding `json:"findings,omitempty"`
 
-	// SourcesExtracted counts source archives unpacked for inspection.
-	SourcesExtracted int           `json:"sourcesExtracted"`
-	Error            string        `json:"error,omitempty"`
-	Duration         time.Duration `json:"duration"`
-	Started          time.Time     `json:"started"`
-
+	Model    string `json:"model,omitempty"`
+	Steps    int    `json:"steps"`
+	AgentRun bool   `json:"agentRun"`
 	// ContentHash and ScannerVersion key the on-disk report cache.
 	ContentHash    string `json:"contentHash,omitempty"`
 	ScannerVersion int    `json:"scannerVersion"`
 	// Cached is true when this report was loaded instead of rescanned.
 	Cached bool `json:"-"`
+	// SourcesExtracted counts source archives unpacked for inspection.
+	SourcesExtracted int           `json:"sourcesExtracted"`
+	Error            string        `json:"error,omitempty"`
+	Duration         time.Duration `json:"duration"`
+	Started          time.Time     `json:"started"`
 }
 
 // FindingsVerdict folds findings into a single verdict.
@@ -115,6 +122,10 @@ func (r *Report) Format() string {
 	b.WriteString(r.Package)
 	b.WriteString(": ")
 	b.WriteString(string(r.Verdict))
+	if r.Summary != "" {
+		b.WriteString(" — ")
+		b.WriteString(r.Summary)
+	}
 	b.WriteByte('\n')
 	for _, f := range r.Findings {
 		b.WriteString("  [")
